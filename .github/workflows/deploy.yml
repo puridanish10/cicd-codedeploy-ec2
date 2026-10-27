@@ -1,0 +1,33 @@
+name: Deploy to EC2 via CodeDeploy
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+      - name: Package revision
+        run: |
+          chmod +x scripts/*.sh
+          zip -r app.zip appspec.yml index.html scripts
+      - name: Upload to S3
+        run: aws s3 cp app.zip s3://aws-cicd-artifacts-danish-2026-654654223041/deploy/app-${{ github.sha }}.zip
+      - name: Create deployment
+        id: deploy
+        run: |
+          ID=$(aws deploy create-deployment \
+            --application-name cicd-web-app \
+            --deployment-group-name cicd-web-dg \
+            --s3-location bucket=aws-cicd-artifacts-danish-2026-654654223041,key=deploy/app-${{ github.sha }}.zip,bundleType=zip \
+            --query deploymentId --output text)
+          echo "Deployment: $ID"
+          echo "id=$ID" >> $GITHUB_OUTPUT
+      - name: Wait for deployment
+        run: aws deploy wait deployment-successful --deployment-id ${{ steps.deploy.outputs.id }}
